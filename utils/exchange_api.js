@@ -5,9 +5,11 @@ class ExchangeAPI {
   constructor() {
     try {
       this.exchange = new ccxt[config.EXCHANGE]({
-        enableRateLimit: true,              // Ограничение скорости запросов
-        options: { defaultType: 'future' }  // Тип рынка (фьючерсы)
-      });
+        enableRateLimit: true,
+        options: { defaultType: 'future' },
+        apiKey: '',
+        secret: '',
+});
     } catch (error) {
       throw new Error(`Биржа ${config.EXCHANGE} не поддерживается`);
     }

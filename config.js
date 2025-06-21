@@ -1,35 +1,28 @@
-const moment = require('moment-timezone');
-
 module.exports = {
-  EXCHANGE: 'binance',                    // Биржа
-  TIMEFRAMES: ['1m', '5m', '15m', '30m', '1h'], // Таймфреймы
-  SYMBOLS: ['BTC/USDT', 'ETH/USDT'],      // Торговые пары
-  TIMEZONE: moment.tz.zone('UTC'),        // Часовой пояс
-  STRATEGY_PARAMS: {                      // Параметры стратегии
-    rsi_period: 14,                       // Период для RSI
-    cci_period: 20                        // Период для CCI
+  // Биржа для CCXT
+  EXCHANGE: 'binance',
+
+  // Символ(ы) для торговли и бэктестинга
+  SYMBOL: 'BTC/USDT',             // для single fetch
+  SYMBOLS: ['BTC/USDT'],         // для множественного fetch
+
+  // Таймфрейм(ы)
+  TIMEFRAME: '1m',                // для single fetchOHLCV
+  TIMEFRAMES: ['1m', '5m', '15m', '30m', '1h'],  // для fetchMultipleTimeframes
+
+  // Стратегии
+  STRATEGIES: ['rsi', 'cci'],     // доступные стратегии
+
+  // Параметры риска
+  RISK_PARAMS: {
+    max_position_size: 0.01,      // доля баланса, рискуемая в одной позиции
+    stop_loss_pct: 1,             // % стоп-лосса
+    take_profit_pct: 2            // % тейк-профита
   },
-  THRESHOLDS: {                           // Пороговые значения индикаторов
-    rsi_1m: 50,
-    rsi_5m: 50,
-    rsi_30m: 50,
-    rsi_1h: 55,
-    cci_5m: 70,
-    cci_15m: 75,
-    cci_1h: 80
-  },
-  RISK_PARAMS: {                          // Параметры управления рисками
-    max_position_size: 0.1,               // Максимальный размер позиции (10% от баланса)
-    stop_loss_pct: 2,                     // Стоп-лосс (2%)
-    take_profit_pct: 4                    // Тейк-профит (4%)
-  },
-  ACTIVE_FILTERS: {                       // Активные фильтры для проверки условий
-    rsi_1m: true,
-    rsi_5m: true,
-    rsi_30m: true,
-    rsi_1h: true,
-    cci_5m: true,
-    cci_15m: true,
-    cci_1h: true
+
+  // Параметры стратегий
+  STRATEGY_PARAMS: {
+    rsi: { period: 14, threshold: { low: 30, high: 70 } },
+    cci: { period: 20, threshold: { low: -100, high: 100 } }
   }
 };

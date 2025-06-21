@@ -1,82 +1,74 @@
-const TradingStrategies = require('../strategies/trading_strategies');
-const config = require('../config');
+// backtester.js
+const ExchangeAPI = require('./utils/exchange_api');
+const TradingStrategies = require('./strategies/trading_strategies');
+const config = require('./config');
 
-class Backtester {
-  constructor(historicalData, initialBalance = 10000) {
-    this.data = historicalData;
-    this.initialBalance = initialBalance;
-    this.currentBalance = initialBalance;
-    this.trades = [];
-    this.openPositions = [];
+/**
+ * Запуск бэктеста по заданной стратегии и таймфрейму
+ * @param {string} strategy — имя стратегии ('rsi' или 'cci')
+ * @param {string} timeframe — таймфрейм ('1m','5m',…)
+ * @param {number} initialBalance — стартовый баланс (USDT)
+ * @returns {Promise<Array>} — список сделок вида { entryTime, exitTime, entryPrice, exitPrice, profitPct }
+ */
+async function run(strategy = 'rsi', timeframe = config.TIMEFRAME, initialBalance = 1000) {
+  // 1) Загрузка исторических данных по всем таймфреймам
+  const api = new ExchangeAPI();
+  const since = Date.now() - 1000 * 60 * 60 * 24 * 30; // последние 30 дней
+  const data = {};
+  for (const tf of config.TIMEFRAMES) {
+    data[tf] = await api.fetchOHLCV(config.SYMBOL, tf, since, 1000);
+    if (!data[tf]) {
+      throw new Error(`Не удалось загрузить данные для ${tf}`);
+    }
   }
 
-  _calculatePositionSize(price) {
-    const riskAmount = this.currentBalance * config.RISK_PARAMS.max_position_size;
-    return riskAmount / price;
-  }
+  // 2) Инициализация переменных
+  const candles = data[timeframe];
+  const trades = [];
+  let balance = initialBalance;
+  let openPos = null;
 
-  _openPosition(candle) {
-    const position = {
-      entry_time: candle.datetime,
-      entry_price: candle.close,
-      size: this._calculatePositionSize(candle.close),
-      stop_loss: candle.close * (1 - config.RISK_PARAMS.stop_loss_pct / 100),
-      take_profit: candle.close * (1 + config.RISK_PARAMS.take_profit_pct / 100)
-    };
-    this.currentBalance -= position.size * position.entry_price;
-    this.openPositions.push(position);
-    return position;
-  }
+  // 3) Основной цикл по свечам
+  for (let i = 1; i < candles.length; i++) {
+    const candle = candles[i];
 
-  _closePosition(position, candle) {
-    const profit = (candle.close - position.entry_price) * position.size;
-    this.currentBalance += position.size * candle.close;
-    const trade = {
-      ...position,
-      exit_time: candle.datetime,
-      exit_price: candle.close,
-      profit,
-      balance: this.currentBalance
-    };
-    this.trades.push(trade);
-    this.openPositions = this.openPositions.filter(p => p !== position);
-    return trade;
-  }
+    // Если есть открытая позиция — проверяем стоп‑лосс/тейк‑профит
+    if (openPos) {
+      if (candle.close <= openPos.stop_loss || candle.close >= openPos.take_profit) {
+        // Закрываем позицию
+        const profit = (candle.close - openPos.entry_price) * openPos.size;
+        balance += openPos.size * candle.close;
 
-  _checkExitConditions(candle) {
-    for (const pos of [...this.openPositions]) {
-      if (candle.close <= pos.stop_loss || candle.close >= pos.take_profit) {
-        this._closePosition(pos, candle);
+        trades.push({
+          entryTime: openPos.entry_time,
+          exitTime: candle.timestamp,
+          entryPrice: openPos.entry_price,
+          exitPrice: candle.close,
+          profitPct: ((candle.close / openPos.entry_price - 1) * 100)
+        });
+
+        openPos = null;
+      }
+    } else {
+      // Нет открытой позиции — проверяем условия стратегии
+      // Здесь мы используем общий метод: TradingStrategies.checkAllConditions
+      // (он смотрит и RSI, и CCI везде, согласно config) :contentReference[oaicite:0]{index=0}
+      if (TradingStrategies.checkAllConditions(data)) {
+        // Открываем новую позицию
+        const size = (balance * config.RISK_PARAMS.max_position_size) / candle.close;
+        openPos = {
+          entry_time: candle.timestamp,
+          entry_price: candle.close,
+          size,
+          stop_loss: candle.close * (1 - config.RISK_PARAMS.stop_loss_pct / 100),
+          take_profit: candle.close * (1 + config.RISK_PARAMS.take_profit_pct / 100)
+        };
+        balance -= size * candle.close;
       }
     }
   }
 
-  runBacktest() {
-    const mainData = this.data['1m']; // Используем 1-минутный таймфрейм как основной
-    for (let i = 1; i < mainData.length; i++) {
-      const currentCandle = mainData[i];
-      if (TradingStrategies.checkAllConditions(this.data)) {
-        if (this.openPositions.length === 0 && this.currentBalance > 0) {
-          this._openPosition(currentCandle);
-        }
-      }
-      this._checkExitConditions(currentCandle);
-    }
-    return this.trades;
-  }
-
-  getPerformanceMetrics() {
-    if (this.trades.length === 0) return {};
-    const totalReturn = ((this.currentBalance / this.initialBalance - 1) * 100);
-    const winningTrades = this.trades.filter(t => t.profit > 0).length;
-    return {
-      initial_balance: this.initialBalance,
-      final_balance: this.currentBalance,
-      total_return: totalReturn,
-      total_trades: this.trades.length,
-      win_rate: (winningTrades / this.trades.length) * 100
-    };
-  }
+  return trades;
 }
 
-module.exports = Backtester;
+module.exports = { run };
