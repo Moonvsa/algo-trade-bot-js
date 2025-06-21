@@ -3,28 +3,49 @@ const config = require('../config');
 
 class ExchangeAPI {
   constructor() {
-    this.exchange = new ccxt[config.EXCHANGE]({
-      apiKey: config.API_KEY,
-      secret: config.API_SECRET,
-      enableRateLimit: true,
-    });
+    try {
+      this.exchange = new ccxt[config.EXCHANGE]({
+        enableRateLimit: true,              // Ограничение скорости запросов
+        options: { defaultType: 'future' }  // Тип рынка (фьючерсы)
+      });
+    } catch (error) {
+      throw new Error(`Биржа ${config.EXCHANGE} не поддерживается`);
+    }
   }
 
-  async fetchHistoricalData(symbol, timeframe, since, limit = 100) {
+  async loadMarkets() {
     try {
-      const data = await this.exchange.fetchOHLCV(symbol, timeframe, since, limit);
+      await this.exchange.loadMarkets();
+      console.log('Рынки успешно загружены');
+    } catch (error) {
+      console.error(`Ошибка при загрузке рынков: ${error.message}`);
+    }
+  }
+
+  async fetchOHLCV(symbol, timeframe, limit = 100) {
+    try {
+      const data = await this.exchange.fetchOHLCV(symbol, timeframe, undefined, limit);
       return data.map(candle => ({
         timestamp: candle[0],
+        datetime: new Date(candle[0]).toISOString(),
         open: candle[1],
         high: candle[2],
         low: candle[3],
         close: candle[4],
-        volume: candle[5],
+        volume: candle[5]
       }));
     } catch (error) {
-      console.error(`Ошибка получения данных: ${error.message}`);
+      console.error(`Ошибка при получении данных OHLCV для ${symbol} (${timeframe}): ${error.message}`);
       return null;
     }
+  }
+
+  async fetchMultipleTimeframes(symbol) {
+    const data = {};
+    for (const tf of config.TIMEFRAMES) {
+      data[tf] = await this.fetchOHLCV(symbol, tf);
+    }
+    return data;
   }
 }
 
